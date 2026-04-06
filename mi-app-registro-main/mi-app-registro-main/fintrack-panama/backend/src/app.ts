@@ -17,6 +17,36 @@ import bankDebtsRoutes from '@modules/bankDebts/bankDebts.routes';
 
 const app = express();
 
+// ─── CORS (must be BEFORE helmet to handle OPTIONS preflights correctly) ───────
+const allowedList = [
+  ...env.FRONTEND_URL.split(','),
+  ...(env.ALLOWED_ORIGINS ? env.ALLOWED_ORIGINS.split(',') : []),
+].map((u) => u.trim().replace(/\/$/, '')).filter(Boolean);
+
+const corsOptions: cors.CorsOptions = {
+  origin: (origin, callback) => {
+    // Allow requests with no origin (server-to-server, curl, Postman)
+    if (!origin) return callback(null, true);
+    // Allow any *.vercel.app origin (covers all Vercel preview deployments)
+    if (origin.endsWith('.vercel.app')) return callback(null, true);
+    // Allow any explicitly configured origin
+    if (allowedList.includes(origin)) return callback(null, true);
+    // Allow localhost in development
+    if (env.NODE_ENV !== 'production' && origin.startsWith('http://localhost')) {
+      return callback(null, true);
+    }
+    callback(null, false);
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+  optionsSuccessStatus: 200,
+};
+
+// Handle preflight OPTIONS requests immediately
+app.options('*', cors(corsOptions));
+app.use(cors(corsOptions));
+
 // ─── Security Middleware ───────────────────────────────────────────────────────
 app.use(
   helmet({
@@ -35,52 +65,6 @@ app.use(
     },
     crossOriginEmbedderPolicy: true,
     hsts: env.NODE_ENV === 'production',
-  })
-);
-
-// Build the list of allowed origins from environment variables
-const allowedOrigins: (string | RegExp)[] = [];
-
-// Add primary FRONTEND_URL(s) — supports comma-separated values
-env.FRONTEND_URL.split(',').forEach((url) => {
-  const trimmed = url.trim().replace(/\/$/, '');
-  if (trimmed) allowedOrigins.push(trimmed);
-});
-
-// Add any extra origins from ALLOWED_ORIGINS (comma-separated)
-if (env.ALLOWED_ORIGINS) {
-  env.ALLOWED_ORIGINS.split(',').forEach((url) => {
-    const trimmed = url.trim().replace(/\/$/, '');
-    if (trimmed) allowedOrigins.push(trimmed);
-  });
-}
-
-// Always allow Vercel preview deployments for this project
-allowedOrigins.push(/^https:\/\/app-finanzas.*\.vercel\.app$/);
-
-// Always allow localhost in development
-if (env.NODE_ENV !== 'production') {
-  allowedOrigins.push(/^http:\/\/localhost:\d+$/);
-}
-
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      // Allow requests with no origin (mobile apps, curl, Postman)
-      if (!origin) return callback(null, true);
-      const allowed = allowedOrigins.some((pattern) =>
-        typeof pattern === 'string' ? pattern === origin : pattern.test(origin)
-      );
-      if (allowed) {
-        callback(null, true);
-      } else {
-        callback(new Error(`CORS: origin '${origin}' not allowed`));
-      }
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
-    optionsSuccessStatus: 200,
   })
 );
 
