@@ -1,6 +1,8 @@
 import express, { Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
+import bcrypt from 'bcrypt';
+import { PrismaClient } from '@prisma/client';
 import { env } from '@config/env';
 import { globalRateLimiter } from '@middleware/rateLimiter';
 import { errorHandler } from '@middleware/errorHandler';
@@ -80,6 +82,34 @@ app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 // ─── Health Check ──────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// ─── One-time Setup Route (create admin user) ──────────────────────────────────
+// Protected by SETUP_KEY env var. Remove after use.
+app.get('/setup', async (req: Request, res: Response) => {
+  const setupKey = process.env.SETUP_KEY;
+  if (!setupKey || req.query.key !== setupKey) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+  try {
+    const prisma = new PrismaClient();
+    const hash = await bcrypt.hash('Admin1234!', 12);
+    const user = await prisma.user.upsert({
+      where: { email: 'admin@fintrack.com' },
+      update: {},
+      create: {
+        email: 'admin@fintrack.com',
+        passwordHash: hash,
+        firstName: 'Admin',
+        lastName: 'FinTrack',
+      },
+    });
+    await prisma.$disconnect();
+    res.json({ message: 'Usuario creado exitosamente', email: user.email, password: 'Admin1234!' });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
 });
 
 // ─── API Routes ────────────────────────────────────────────────────────────────
