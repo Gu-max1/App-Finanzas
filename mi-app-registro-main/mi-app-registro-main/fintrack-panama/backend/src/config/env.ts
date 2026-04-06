@@ -11,7 +11,8 @@ const envSchema = z.object({
   JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
   PORT: z.string().transform(Number).pipe(z.number().int().positive()).default('4000'),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
-  FRONTEND_URL: z.string().url().default('http://localhost:3000').transform(val => val.replace(/\/$/, '')),
+  FRONTEND_URL: z.string().default('http://localhost:3000'),
+  ALLOWED_ORIGINS: z.string().optional(),
   RATE_LIMIT_WINDOW_MS: z.string().transform(Number).pipe(z.number()).default('900000'),
   RATE_LIMIT_MAX_REQUESTS: z.string().transform(Number).pipe(z.number()).default('100'),
 });

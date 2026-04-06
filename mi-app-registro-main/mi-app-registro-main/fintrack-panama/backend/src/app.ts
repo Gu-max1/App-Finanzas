@@ -38,13 +38,49 @@ app.use(
   })
 );
 
+// Build the list of allowed origins from environment variables
+const allowedOrigins: (string | RegExp)[] = [];
+
+// Add primary FRONTEND_URL(s) — supports comma-separated values
+env.FRONTEND_URL.split(',').forEach((url) => {
+  const trimmed = url.trim().replace(/\/$/, '');
+  if (trimmed) allowedOrigins.push(trimmed);
+});
+
+// Add any extra origins from ALLOWED_ORIGINS (comma-separated)
+if (env.ALLOWED_ORIGINS) {
+  env.ALLOWED_ORIGINS.split(',').forEach((url) => {
+    const trimmed = url.trim().replace(/\/$/, '');
+    if (trimmed) allowedOrigins.push(trimmed);
+  });
+}
+
+// Always allow Vercel preview deployments for this project
+allowedOrigins.push(/^https:\/\/app-finanzas.*\.vercel\.app$/);
+
+// Always allow localhost in development
+if (env.NODE_ENV !== 'production') {
+  allowedOrigins.push(/^http:\/\/localhost:\d+$/);
+}
+
 app.use(
   cors({
-    origin: [env.FRONTEND_URL, `${env.FRONTEND_URL}/`],
+    origin: (origin, callback) => {
+      // Allow requests with no origin (mobile apps, curl, Postman)
+      if (!origin) return callback(null, true);
+      const allowed = allowedOrigins.some((pattern) =>
+        typeof pattern === 'string' ? pattern === origin : pattern.test(origin)
+      );
+      if (allowed) {
+        callback(null, true);
+      } else {
+        callback(new Error(`CORS: origin '${origin}' not allowed`));
+      }
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
-    optionsSuccessStatus: 200 // Importante para navegadores antiguos y algunos preflights
+    optionsSuccessStatus: 200,
   })
 );
 
