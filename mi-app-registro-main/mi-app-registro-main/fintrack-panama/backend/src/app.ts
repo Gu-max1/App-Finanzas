@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import { env } from '@config/env';
@@ -17,53 +17,55 @@ import bankDebtsRoutes from '@modules/bankDebts/bankDebts.routes';
 
 const app = express();
 
-// ─── CORS (must be BEFORE helmet to handle OPTIONS preflights correctly) ───────
+// ─── CORS — raw middleware, no package magic ───────────────────────────────────
+// Builds the explicit allow-list from env vars
 const allowedList = [
   ...env.FRONTEND_URL.split(','),
   ...(env.ALLOWED_ORIGINS ? env.ALLOWED_ORIGINS.split(',') : []),
 ].map((u) => u.trim().replace(/\/$/, '')).filter(Boolean);
 
-const corsOptions: cors.CorsOptions = {
-  origin: (origin, callback) => {
-    // Allow requests with no origin (server-to-server, curl, Postman)
-    if (!origin) return callback(null, true);
-    // Allow any *.vercel.app origin (covers all Vercel preview deployments)
-    if (origin.endsWith('.vercel.app')) return callback(null, true);
-    // Allow any explicitly configured origin
-    if (allowedList.includes(origin)) return callback(null, true);
-    // Allow localhost in development
-    if (env.NODE_ENV !== 'production' && origin.startsWith('http://localhost')) {
-      return callback(null, true);
-    }
-    callback(null, false);
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
-  optionsSuccessStatus: 200,
-};
+console.log('[CORS] Allowed origins list:', allowedList);
 
-// Handle preflight OPTIONS requests immediately
-app.options('*', cors(corsOptions));
-app.use(cors(corsOptions));
+function isOriginAllowed(origin: string | undefined): boolean {
+  if (!origin) return true; // server-to-server / curl / Postman
+  if (origin.endsWith('.vercel.app')) return true; // all Vercel deployments
+  if (allowedList.includes(origin)) return true;
+  if (env.NODE_ENV !== 'production' && origin.startsWith('http://localhost')) return true;
+  return false;
+}
+
+// This middleware runs before everything else and sets CORS headers directly
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const origin = req.headers.origin;
+
+  console.log(`[CORS] ${req.method} ${req.path} — origin: ${origin ?? '(none)'}`);
+
+  if (isOriginAllowed(origin)) {
+    if (origin) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Vary', 'Origin');
+    }
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Requested-With,Accept');
+    res.setHeader('Access-Control-Max-Age', '86400');
+  }
+
+  // Respond to preflight immediately — no further middleware needed
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
+  }
+
+  next();
+});
 
 // ─── Security Middleware ───────────────────────────────────────────────────────
 app.use(
   helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'"],
-        styleSrc: ["'self'"],
-        imgSrc: ["'self'", 'data:'],
-        connectSrc: ["'self'"],
-        fontSrc: ["'self'"],
-        objectSrc: ["'none'"],
-        mediaSrc: ["'self'"],
-        frameSrc: ["'none'"],
-      },
-    },
-    crossOriginEmbedderPolicy: true,
+    contentSecurityPolicy: false,          // Not needed for a JSON API
+    crossOriginEmbedderPolicy: false,      // Would block cross-origin requests
+    crossOriginResourcePolicy: false,      // Would override CORS with same-origin restriction
     hsts: env.NODE_ENV === 'production',
   })
 );
